@@ -14,8 +14,10 @@
     passing Workspace ONE environment and staging user credentials as parameters.
     * Creates %WINDIR%\Setup\Scripts\EnrolintoWS1.ps1 which checks if device is image or provisioned desktop.
     * Sets registry key to ensure HCoA agent does not rename the SetupComplete.cmd.
-    * Copies AirWatchAgent.msi to %WINDIR%\Setup\Scripts folder. goto https://getwsone.com to download or goto 
-    https://<DS_FQDN>/agents/ProtectionAgent_AutoSeed/AirwatchAgent.msi to download it, substituting <DS_FQDN> with the FQDN for the Device Services Server.
+    * Copies AirWatchAgent.msi to %WINDIR%\Setup\Scripts folder. 
+    Goto https://getwsone.com to download or https://<DS_FQDN>/agents/ProtectionAgent_AutoSeed/AirwatchAgent.msi to download it, 
+    substituting <DS_FQDN> with the FQDN for the Device Services Server.
+    OR use -Download switch to download the latest release of iHub
 
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
     IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -28,17 +30,14 @@
     * AirWatchAgent.msi in the current folder
     * WS1 enrollment credentials and server details
 .EXAMPLE
-  .\Setup_EnrolintoWS1.ps1 -username USERNAME -password PASSWORD -Server DESTINATION_SERVER_URL -OGName DESTINATION_OG_NAME
+  .\Setup_EnrolintoWS1.ps1 -username USERNAME -password PASSWORD -Server DESTINATION_SERVER_URL -OGName DESTINATION_OG_NAME -Download
 #>
 param (
-    [Parameter(Mandatory=$false)]
-    [string]$username=$script:Username,
-    [Parameter(Mandatory=$false)]
-    [string]$password=$script:password,
-    [Parameter(Mandatory=$false)]
-    [string]$OGName=$script:OGName,
-    [Parameter(Mandatory=$false)]
-    [string]$Server=$script:Server
+    [Parameter(Mandatory=$true)][string]$script:username=$Username,
+    [Parameter(Mandatory=$true)][string]$script:password=$password,
+    [Parameter(Mandatory=$true)][string]$script:OGName=$OGName,
+    [Parameter(Mandatory=$true)][string]$script:Server=$Server,
+    [switch]$Download
 )
 
 Function Test-Folder {
@@ -62,21 +61,48 @@ Function Test-Folder {
 function Write-Log2{
     [CmdletBinding()]
     Param(
-        [string]$Message,
-        [Alias('LogPath')]
-        [Alias('LogLocation')]
-        [string]$Path=$Local:Path,
-        [Parameter(Mandatory=$false)]
-        [ValidateSet("Success","Error","Warn","Info")]
-        [string]$Level="Info"
+      [string]$Message,
+      [Alias('LogPath')][Alias('LogLocation')][string]$Path=$Local:Path,
+      [Parameter(Mandatory=$false)][ValidateSet("Success","Error","Warn","Info")][string]$Level="Info"
     )
-
+  
     $ColorMap = @{"Success"="Green";"Error"="Red";"Warn"="Yellow"};
     $FontColor = "White";
     If($ColorMap.ContainsKey($Level)){$FontColor = $ColorMap[$Level];}
     $DateNow = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    Add-Content -Path $Path -Value ("$DateNow     ($Level)     $Message")
+    Add-Content -Path $Path -Value ("$DateNow`t($Level)`t$Message")
     Write-Host "$DateNow::$Level`t$Message" -ForegroundColor $FontColor;
+}
+
+function Invoke-DownloadAirwatchAgent {
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = 'Tls11,Tls12'
+        $url = "https://packages.vmware.com/wsone/AirwatchAgent.msi"
+        $output = "$current_path\$agent"
+        $Response = Invoke-WebRequest -Uri $url -OutFile $output
+        # This will only execute if the Invoke-WebRequest is successful.
+        $StatusCode = $Response.StatusCode
+    } catch {
+        $StatusCode = $_.Exception.Response.StatusCode.value__
+        Write-Log2 -Path "$logLocation" -Message "Failed to download AirwatchAgent.msi with StatusCode $StatusCode" -Level Error
+    }
+}
+
+#Enable Debug Logging
+$Debug = $false
+
+$current_path = $PSScriptRoot;
+if($PSScriptRoot -eq ""){
+    #PSScriptRoot only popuates if the script is being run.  Default to default location if empty
+    $current_path = Get-Location
+} 
+$DateNow = Get-Date -Format "yyyyMMdd_hhmm"
+$scriptName = $MyInvocation.MyCommand.Name
+$logLocation = "$current_path\$scriptName_$DateNow.log"
+
+if($Debug){
+  write-host "Current Path: $current_path"
+  write-host "LogLocation: $LogLocation"
 }
 
 #Variables
@@ -84,12 +110,8 @@ $current_path = $PSScriptRoot;
 $destfolder = "$env:WINDIR\Setup\Scripts";
 $OEMPATH = "C:\Recovery\OEM";
 $file = "AirwatchAgent.msi";
-$name = "AllowSetupComplete";
-$value = "1";
 $key = "Registry::HKLM\Software\VMware, Inc.\VMware VDM\DaaS Agent";
-$DateNow = Get-Date -Format "yyyyMMdd_hhmm";
-$pathfile = "$destfolder\Setup_EnrolintoWS1_$DateNow";
-$Script:logLocation = "$pathfile.log";
+
 
 Test-Folder -Path $destfolder
 Write-Log2 -Path "$logLocation" -Message "Setup_EnrolintoWS1 Started" -Level Success
@@ -98,7 +120,7 @@ Write-Log2 -Path "$logLocation" -Message "Setup_EnrolintoWS1 Started" -Level Suc
 if ([string]::IsNullOrEmpty($script:Server)){
     $script:Username = Read-Host -Prompt 'Enter the Staging Username'
     $script:password = Read-Host -Prompt 'Enter the Staging User Password'
-    $script:Server = Read-Host -Prompt 'Enter the Workspace ONE UEM Server URL'
+    $script:Server = Read-Host -Prompt 'Enter the Workspace ONE UEM Device Services Server URL'
     $script:OGName = Read-Host -Prompt 'Enter the Organizational Group Name'
 }
 Write-Log2 -Path "$logLocation" -Message "Workspace ONE environment details obtained" -Level Info
@@ -135,14 +157,10 @@ $EnrolintoWS1 = @'
   .\EnrolintoWS1.ps1 -username USERNAME -password PASSWORD -Server DESTINATION_SERVER_URL -OGName DESTINATION_OG_NAME
 #>
 param (
-  [Parameter(Mandatory=$true)]
-  [string]$username=$script:username,
-  [Parameter(Mandatory=$true)]
-  [string]$password=$script:password,
-  [Parameter(Mandatory=$true)]
-  [string]$OGName=$script:OGName,
-  [Parameter(Mandatory=$true)]
-  [string]$Server=$script:Server
+  [Parameter(Mandatory=$true)][string]$username=$script:username,
+  [Parameter(Mandatory=$true)][string]$password=$script:password,
+  [Parameter(Mandatory=$true)][string]$OGName=$script:OGName,
+  [Parameter(Mandatory=$true)][string]$Server=$script:Server
 )
 
 function Write-Log2{
@@ -150,12 +168,8 @@ function Write-Log2{
   Param
   (
       [string]$Message,
-      [Alias('LogPath')]
-      [Alias('LogLocation')]
-      [string]$Path=$Local:Path,
-      [Parameter(Mandatory=$false)]
-      [ValidateSet("Success","Error","Warn","Info")]
-      [string]$Level="Info"
+      [Alias('LogPath')][Alias('LogLocation')][string]$Path=$Local:Path,
+      [Parameter(Mandatory=$false)][ValidateSet("Success","Error","Warn","Info")][string]$Level="Info"
   )
 
       $ColorMap = @{"Success"="Green";"Error"="Red";"Warn"="Yellow"};
@@ -237,6 +251,13 @@ if(Test-Path -Path $key){
     New-ItemProperty -Path $key -Name "AllowSetupComplete" -PropertyType "DWord" -Value 1 -Force -Confirm:$false
     Write-Log2 -Path "$logLocation" -Message "create AllowSetupComplete DWORD=1 registry value" -Level Info
 }
+
+#Download latest AirwatchAgent.msi
+if($Download){
+    #Download AirwatchAgent.msi if -Download switch used, otherwise requires AirwatchAgent.msi to be deployed in the ZIP.
+    Invoke-DownloadAirwatchAgent
+    Start-Sleep -Seconds 10
+} 
 
 #Copy AirwatchAgent.msi to C:\Recovery\OEM
 Test-Folder -Path $OEMPATH
