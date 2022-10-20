@@ -210,7 +210,7 @@ if(Get-ItemProperty -Path $keypath -Name $name -ErrorAction SilentlyContinue){
         Write-Log2 -Path "$logLocation" -Message "HCoA Agent initialized" -Level Info
         while ($enrollmentcomplete -ne $true) {
             Write-Log2 -Path "$logLocation" -Message "Starting Workspace ONE enrollment" -Level Info
-            Start-Process msiexec.exe -ArgumentList "/i","C:\Recovery\OEM\AirwatchAgent.msi","/qn","ENROLL=Y","DOWNLOADWSBUNDLE=false","SERVER=$Server","LGNAME=$OGName","USERNAME=$username","PASSWORD=$password";
+            Start-Process msiexec.exe -ArgumentList "/i","C:\Recovery\OEM\AirwatchAgent.msi","/qn","ENROLL=Y","SERVER=$Server","LGNAME=$OGName","USERNAME=$username","PASSWORD=$password","ASSIGNTOLOGGEDINUSER=Y","/log $current_path\AWAgent.log";
             do {start-sleep 60} until ((Get-ItemProperty -path "Registry::HKLM\SOFTWARE\AIRWATCH\EnrollmentStatus" -ErrorAction SilentlyContinue).Status -eq 'Completed');
             start-sleep 60;
             Write-Log2 -Path "$logLocation" -Message "Workspace ONE enrollment complete" -Level Success
